@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sınav Hazırlık Uygulaması</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Inter Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <!-- PDF.js kütüphanesi -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+        .container {
+            max-width: 800px;
+        }
+        .question-card {
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.08);
+        }
+        .correct {
+            background-color: #10B981 !important;
+            color: white !important;
+            border-color: #10B981 !important;
+        }
+        .incorrect {
+            background-color: #EF4444 !important;
+            color: white !important;
+            border-color: #EF4444 !important;
+        }
+        .option-button:hover:not(:disabled) {
+            background-color: #e5e7eb;
+        }
+        .option-button:disabled {
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+        .spinner {
+            border: 4px solid #f3f4f6;
+            border-top: 4px solid #3b82f6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .file-input-label {
+            cursor: pointer;
+            padding: 12px 24px;
+            background-color: #d1d5db;
+            color: #4b5563;
+            font-weight: 600;
+            border-radius: 8px;
+            transition: background-color 0.2s;
+        }
+        .file-input-label:hover {
+            background-color: #9ca3af;
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen p-4">
+
+    <div class="container mx-auto px-4 py-8 bg-white rounded-xl shadow-lg">
+        <h1 class="text-3xl font-bold text-gray-800 text-center mb-6">Sınav Hazırlık Uygulaması</h1>
+        <p class="text-center text-gray-600 mb-6">PDF notlarınızı yükleyin ve kendinizi test etmek için sorular oluşturun.</p>
+        
+        <!-- Dosya Yükleme ve Buton Bölümü -->
+        <div id="input-section" class="flex flex-col items-center p-6 border-2 border-dashed border-gray-300 rounded-xl mb-6">
+            <div class="flex items-center justify-between w-full mb-4 px-2">
+                <label for="question-count" class="text-gray-700 font-medium whitespace-nowrap mr-4">Soru Sayısı:</label>
+                <input type="number" id="question-count" value="5" min="1" max="20" class="w-20 p-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 text-center">
+            </div>
+            <input type="file" id="pdf-file-input" class="hidden" accept="application/pdf">
+            <label for="pdf-file-input" class="file-input-label">PDF Yüklemek İçin Tıkla</label>
+            <span id="file-name" class="mt-2 text-sm text-gray-500">Henüz dosya seçilmedi</span>
+            <div class="flex flex-wrap justify-center gap-4 w-full mt-4">
+                <button id="generate-button" class="cursor-pointer bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors">
+                    Soruları ✨ Oluştur
+                </button>
+                <button id="summarize-button" class="cursor-pointer bg-green-500 hover:bg-green-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors">
+                    Konuyu ✨ Özetle
+                </button>
+            </div>
+        </div>
+
+        <!-- Yükleniyor Göstergesi -->
+        <div id="loading-spinner" class="hidden flex flex-col items-center justify-center py-10">
+            <div class="spinner mb-4"></div>
+            <p class="text-blue-500 font-medium">İşleniyor...</p>
+        </div>
+
+        <!-- Hata Mesajı -->
+        <div id="error-message" class="hidden bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg relative mb-6" role="alert">
+            <span class="block sm:inline" id="error-text">Bir hata oluştu! Lütfen daha sonra tekrar deneyin.</span>
+        </div>
+
+        <!-- Sorular ve Özet Bölümü -->
+        <div id="content-container" class="space-y-8">
+            <!-- Sorular veya özet buraya dinamik olarak eklenecek -->
+        </div>
+
+        <!-- Kontrol Butonları -->
+        <div id="control-buttons" class="hidden mt-8 flex flex-wrap justify-center gap-4">
+            <button id="new-questions-button" class="cursor-pointer bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors">
+                Yeni Sorular Oluştur
+            </button>
+            <button id="refresh-button" class="cursor-pointer bg-gray-500 hover:bg-gray-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors">
+                Yenile
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // Gerekli HTML elementlerine erişim
+        const pdfFileInput = document.getElementById('pdf-file-input');
+        const fileNameSpan = document.getElementById('file-name');
+        const generateButton = document.getElementById('generate-button');
+        const summarizeButton = document.getElementById('summarize-button');
+        const questionCountInput = document.getElementById('question-count');
+        const loadingSpinner = document.getElementById('loading-spinner');
+        const contentContainer = document.getElementById('content-container');
+        const errorMessageDiv = document.getElementById('error-message');
+        const errorTextSpan = document.getElementById('error-text');
+        const controlButtonsDiv = document.getElementById('control-buttons');
+        const newQuestionsButton = document.getElementById('new-questions-button');
+        const refreshButton = document.getElementById('refresh-button');
+
+        let extractedText = '';
+
+        // Sabitler
+        const apiKey = "AIzaSyCx3bTMD73bVSVmHfvRIQhra8OTVSi7X_Q";
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+
+        // Utility fonksiyonları
+        function showLoading(message) {
+            loadingSpinner.querySelector('p').textContent = message;
+            loadingSpinner.classList.remove('hidden');
+            loadingSpinner.classList.add('flex');
+            contentContainer.innerHTML = '';
+            controlButtonsDiv.classList.add('hidden');
+            hideError();
+        }
+
+        function hideLoading() {
+            loadingSpinner.classList.add('hidden');
+            loadingSpinner.classList.remove('flex');
+        }
+
+        function showError(message) {
+            errorTextSpan.textContent = message;
+            errorMessageDiv.classList.remove('hidden');
+        }
+
+        function hideError() {
+            errorMessageDiv.classList.add('hidden');
+        }
+        
+        function sanitizeText(text) {
+            return text.replace(/[\u0000-\u001F\u007F-\u009F]/g, "").trim();
+        }
+        
+        // PDF'ten metin çıkarma
+        pdfFileInput.addEventListener('change', async (event) => {
+            const file = event.target.files[0];
+            if (!file) {
+                return;
+            }
+
+            fileNameSpan.textContent = file.name;
+            showLoading("PDF okunuyor...");
+            
+            extractedText = '';
+            
+            try {
+                const pdf = await pdfjsLib.getDocument({ url: URL.createObjectURL(file) }).promise;
+                const totalPages = pdf.numPages;
+                for (let i = 1; i <= totalPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const textContent = await page.getTextContent();
+                    extractedText += textContent.items.map(item => item.str).join(' ');
+                }
+                hideLoading();
+                alert('PDF başarıyla okundu! Artık soruları veya özeti oluşturabilirsiniz.');
+            } catch (error) {
+                console.error('PDF okuma hatası:', error);
+                hideLoading();
+                showError("PDF dosyası okunamadı. Lütfen geçerli bir dosya yükleyin.");
+            }
+        });
+        
+        // LLM ile soru oluşturma
+        async function generateQuestions() {
+            if (!extractedText || extractedText.length < 50) {
+                showError("Lütfen geçerli bir PDF yükleyin ve dosya en az 50 karakter içersin.");
+                return;
+            }
+            
+            const questionCount = parseInt(questionCountInput.value, 10);
+
+            if (questionCount < 1 || questionCount > 20) {
+                showError("Lütfen 1 ile 20 arasında bir soru sayısı girin.");
+                return;
+            }
+
+            if (!apiKey) {
+                showError("API anahtarı eksik. Lütfen kodu düzenleyerek anahtarınızı ekleyin.");
+                return;
+            }
+
+            showLoading("Sorular oluşturuluyor...");
+
+            try {
+                const cleanedText = sanitizeText(extractedText);
+
+                const systemPrompt = `Sen, öğrenci notlarını çoktan seçmeli sınav sorularına dönüştürmede uzman bir eğitim asistanısın. Kullanıcının notlarını analiz et ve bu notlara dayanan ${questionCount} adet çoktan seçmeli soru oluştur. Her sorunun dört seçeneği (a, b, c, d) ve doğru cevabın indeks numarası (0-3) olmalıdır. Cevapları aşağıdaki JSON şemasına göre Türkçe olarak oluştur.`;
+
+                const userQuery = `Bu notlara göre çoktan seçmeli sorular oluştur: \n\n${cleanedText}`;
+
+                const payload = {
+                    contents: [{
+                        parts: [{ text: userQuery }]
+                    }],
+                    systemInstruction: {
+                        parts: [{ text: systemPrompt }]
+                    },
+                    generationConfig: {
+                        responseMimeType: "application/json",
+                        responseSchema: {
+                            type: "OBJECT",
+                            properties: {
+                                "questions": {
+                                    type: "ARRAY",
+                                    items: {
+                                        type: "OBJECT",
+                                        properties: {
+                                            "question": { "type": "STRING" },
+                                            "options": {
+                                                "type": "ARRAY",
+                                                "items": { "type": "STRING" }
+                                            },
+                                            "correct_answer_index": { "type": "NUMBER" }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                };
+
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    if (response.status === 401 || response.status === 403) {
+                        throw new Error("API anahtarı geçersiz. Lütfen doğru anahtarı girdiğinizden emin olun.");
+                    }
+                    throw new Error(`API hatası: ${response.status}`);
+                }
+
+                const result = await response.json();
+                const jsonText = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+                if (!jsonText) {
+                    throw new Error("API'den geçerli bir JSON yanıtı alınamadı.");
+                }
+
+                const data = JSON.parse(jsonText);
+                const questions = data.questions;
+
+                if (!questions || questions.length === 0) {
+                    showError("Notlarınızdan soru oluşturulamadı. Lütfen daha kapsamlı notlar girin.");
+                    hideLoading();
+                    return;
+                }
+
+                hideLoading();
+                renderQuestions(questions);
+
+            } catch (error) {
+                console.error("Hata:", error);
+                hideLoading();
+                showError(`Bir hata oluştu: ${error.message}.`);
+            }
+        }
+        
+        // LLM ile özet çıkarma
+        async function summarizeNotes() {
+             if (!extractedText || extractedText.length < 50) {
+                showError("Lütfen geçerli bir PDF yükleyin ve dosya en az 50 karakter içersin.");
+                return;
+            }
+            if (!apiKey) {
+                showError("API anahtarı eksik. Lütfen kodu düzenleyerek anahtarınızı ekleyin.");
+                return;
+            }
+
+            showLoading("Özet oluşturuluyor...");
+
+            try {
+                const cleanedText = sanitizeText(extractedText);
+
+                const userQuery = `Aşağıdaki metni özetle: \n\n${cleanedText}`;
+
+                const payload = {
+                    contents: [{ parts: [{ text: userQuery }] }],
+                };
+
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    if (response.status === 401 || response.status === 403) {
+                        throw new Error("API anahtarı geçersiz. Lütfen doğru anahtarı girdiğinizden emin olun.");
+                    }
+                    throw new Error(`API hatası: ${response.status}`);
+                }
+
+                const result = await response.json();
+                const summaryText = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+                if (!summaryText) {
+                    throw new Error("API'den geçerli bir özet yanıtı alınamadı.");
+                }
+
+                hideLoading();
+                renderSummary(summaryText);
+
+            } catch (error) {
+                console.error("Hata:", error);
+                hideLoading();
+                showError(`Bir hata oluştu: ${error.message}.`);
+            }
+        }
+
+        // Butonlara event listener ekle
+        generateButton.addEventListener('click', generateQuestions);
+        summarizeButton.addEventListener('click', summarizeNotes);
+        newQuestionsButton.addEventListener('click', generateQuestions);
+        refreshButton.addEventListener('click', () => {
+            extractedText = '';
+            fileNameSpan.textContent = 'Henüz dosya seçilmedi';
+            contentContainer.innerHTML = '';
+            hideError();
+            controlButtonsDiv.classList.add('hidden');
+        });
+
+
+        // Soruları ekrana yazan fonksiyon
+        function renderQuestions(questions) {
+            contentContainer.innerHTML = '';
+            questions.forEach((q, qIndex) => {
+                const questionCard = document.createElement('div');
+                questionCard.className = 'question-card bg-gray-50 p-6 rounded-xl border border-gray-200 mb-6';
+                questionCard.innerHTML = `
+                    <h2 class="text-xl font-bold text-gray-700 mb-4">Soru ${qIndex + 1}: ${q.question}</h2>
+                    <div class="options-container space-y-3"></div>
+                `;
+                
+                const optionsContainer = questionCard.querySelector('.options-container');
+                q.options.forEach((optionText, oIndex) => {
+                    const optionButton = document.createElement('button');
+                    optionButton.className = 'option-button w-full text-left py-3 px-4 rounded-lg transition-colors border-2 border-gray-300 text-gray-700 font-medium';
+                    optionButton.textContent = optionText;
+                    optionButton.setAttribute('data-index', oIndex);
+
+                    optionButton.addEventListener('click', () => {
+                        handleAnswer(optionButton, q.correct_answer_index, optionsContainer);
+                    });
+                    optionsContainer.appendChild(optionButton);
+                });
+
+                contentContainer.appendChild(questionCard);
+            });
+            controlButtonsDiv.classList.remove('hidden');
+        }
+        
+        // Özeti ekrana yazan fonksiyon
+        function renderSummary(summary) {
+            contentContainer.innerHTML = '';
+            const summaryCard = document.createElement('div');
+            summaryCard.className = 'bg-gray-50 p-6 rounded-xl border border-gray-200';
+            summaryCard.innerHTML = `
+                <h2 class="text-xl font-bold text-gray-700 mb-4">Notların Özeti</h2>
+                <p class="text-gray-700 whitespace-pre-wrap">${summary}</p>
+            `;
+            contentContainer.appendChild(summaryCard);
+            controlButtonsDiv.classList.remove('hidden');
+        }
+
+        // Cevapları kontrol eden ve geri bildirim veren fonksiyon
+        function handleAnswer(selectedButton, correctIndex, optionsContainer) {
+            const allButtons = optionsContainer.querySelectorAll('.option-button');
+            const selectedIndex = parseInt(selectedButton.getAttribute('data-index'));
+
+            allButtons.forEach(button => {
+                const buttonIndex = parseInt(button.getAttribute('data-index'));
+                if (buttonIndex === correctIndex) {
+                    button.classList.add('correct');
+                }
+                if (button === selectedButton && selectedIndex !== correctIndex) {
+                    selectedButton.classList.add('incorrect');
+                }
+                button.disabled = true;
+            });
+        }
+    </script>
+</body>
+</html>
